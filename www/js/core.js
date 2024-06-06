@@ -405,7 +405,7 @@ function getWorkflow() {
             let seconds = parseInt(time[2]);
 
             // Process stops after 45 seconds if it is still queued
-            if (seconds >= 45 && statusText.textContent === 'Queued') {
+            if (seconds >= 60 && statusText.textContent === 'Queued') {
                 clearInterval(statusInterval);
                 clearInterval(timerInterval);
                 statusText.textContent = 'Timed Out';
