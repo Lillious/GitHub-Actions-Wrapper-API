@@ -429,8 +429,8 @@ function getWorkflow() {
             timer.textContent = `${hours < 10 ? '0' + hours : hours}:${minutes < 10 ? '0' + minutes : minutes}:${seconds < 10 ? '0' + seconds : seconds}`;
         }, 1000);
 
-        // Wait for 2 seconds before fetching the latest workflows
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // Wait for 5 seconds before fetching the latest workflows
+        await new Promise(resolve => setTimeout(resolve, 5000));
         
         const latestWorkflows = await getLatestWorkflowRuns();
 
