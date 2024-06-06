@@ -409,6 +409,7 @@ function getWorkflow() {
                 clearInterval(statusInterval);
                 clearInterval(timerInterval);
                 statusText.textContent = 'Timed Out';
+                enableAllInput();
                 progress.style.backgroundColor = 'grey';
                 progress.style.width = '100%';
                 return;
