@@ -1,4 +1,4 @@
-# github-front-end
+# github-actions-wrapper-api
 
 To install dependencies:
 
