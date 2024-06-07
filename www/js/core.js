@@ -37,7 +37,7 @@ function enableAllInput () {
 }
 
 async function getRepositories () {
-    const response = await fetch('http://localhost/api/repositories',
+    const response = await fetch('http://localhost:8080/api/repositories',
     {
         method: 'GET',
         headers: {
@@ -55,7 +55,7 @@ async function getRepositories () {
 }
 
 async function getWorkflows(username = getUsername(), repo = getRepo()) {
-    const response = await fetch(`http://localhost/api/workflows?owner=${username}&repo=${repo}`,
+    const response = await fetch(`http://localhost:8080/api/workflows?owner=${username}&repo=${repo}`,
     {
         method: 'GET',
         headers: {
@@ -73,7 +73,7 @@ async function getWorkflows(username = getUsername(), repo = getRepo()) {
 }
 
 async function getWorkflowInputs(username = getUsername(), repo = getRepo(), workflow = getWorkflow()) {
-    const reponse = await fetch(`http://localhost/api/workflow/inputs?owner=${username}&repo=${repo}&workflow=${workflow}`,
+    const reponse = await fetch(`http://localhost:8080/api/workflow/inputs?owner=${username}&repo=${repo}&workflow=${workflow}`,
     {
         method: 'GET',
         headers: {
@@ -95,7 +95,7 @@ async function getWorkflowInputs(username = getUsername(), repo = getRepo(), wor
 }
 
 async function getWorkflowRuns(result) {
-    const response = await fetch('http://localhost/api/workflow',
+    const response = await fetch('http://localhost:8080/api/workflow',
     {
         method: 'POST',
         headers: {
@@ -120,7 +120,7 @@ async function getWorkflowRuns(result) {
 }
 
 async function getLatestWorkflowRuns() {
-    const response = await fetch(`http://localhost/api/runs?owner=${getUsername()}&repo=${getRepo()}&workflow=${getWorkflow()}`,
+    const response = await fetch(`http://localhost:8080/api/runs?owner=${getUsername()}&repo=${getRepo()}&workflow=${getWorkflow()}`,
     {
         method: 'GET',
         headers: {
@@ -140,7 +140,7 @@ async function getLatestWorkflowRuns() {
 }
 
 async function getJobs(run_id, id) {
-    const response = await fetch(`http://localhost/api/run/jobs?owner=${getUsername()}&repo=${getRepo()}&run_id=${run_id}&id=${id}`,
+    const response = await fetch(`http://localhost:8080/api/run/jobs?owner=${getUsername()}&repo=${getRepo()}&run_id=${run_id}&id=${id}`,
     {
         method: 'GET',
         headers: {
@@ -152,7 +152,7 @@ async function getJobs(run_id, id) {
 }
 
 async function getStatus(run_id) {
-    const response = await fetch(`http://localhost/api/run/status?owner=${getUsername()}&repo=${getRepo()}&run_id=${run_id}`,
+    const response = await fetch(`http://localhost:8080/api/run/status?owner=${getUsername()}&repo=${getRepo()}&run_id=${run_id}`,
     {
         method: 'GET',
         headers: {
@@ -171,7 +171,7 @@ async function getStatus(run_id) {
 }
 
 async function forceCancelRun(run_id) {
-    const response = await fetch(`http://localhost/api/run/cancel/`,
+    const response = await fetch(`http://localhost:8080/api/run/cancel/`,
     {
         method: 'POST',
         headers: {

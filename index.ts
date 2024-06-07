@@ -1,22 +1,20 @@
 import express from 'express';
 import cors from 'cors';
 const app = express();
-const port = process.env.PORT || 80;
+const port = process.env.PORT || 8080;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-var whitelist = ['null']
 var corsOptions = {
   origin: function (origin: any, callback: any) {
-    if (whitelist.indexOf(origin) !== -1 || !origin) {
-      callback(null, true)
-    } else {
-      callback(new Error('Not allowed by CORS'))
-    }
+    callback(null, true)
   }
 }
 
 app.use(cors(corsOptions));
+
+// Static path to www
+app.use(express.static('www'));
 
 import { router as api } from './routes/api';
 app.use(api);
