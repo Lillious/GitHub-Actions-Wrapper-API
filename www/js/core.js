@@ -1,5 +1,5 @@
 const workflowSelect = document.getElementById('workflow-select');
-const repoSelect = document.getElementById('repos-select');
+const repoSelect = document.getElementById('repo-select');
 const repoSuccessIcon = document.getElementById('repo-success-icon');
 const repoCancelIcon = document.getElementById('repo-cancel-icon');
 const repoLoadingIcon = document.getElementById('repo-loading-icon');
@@ -7,11 +7,17 @@ const workflowSuccessIcon = document.getElementById('workflow-success-icon');
 const workflowCancelIcon = document.getElementById('workflow-cancel-icon');
 const workflowLoadingIcon = document.getElementById('workflow-loading-icon');
 const outputDisplay = document.getElementById('output-container');
+const inputs = document.getElementById('inputs');
+const inputcontainer = document.getElementById('inputs-container');
 const button = document.getElementById('start-workflow');
 const timer = document.getElementById('timer');
 const progress = document.getElementById('progress');
 const statusText = document.getElementById('status-text');
 const cancelRun = document.getElementById('workflow-cancel-run-icon');
+const extendLogsLeft = document.getElementById('extend-logs-left');
+const extendLogsRight = document.getElementById('extend-logs-right');
+const logs = document.getElementById('logs-container');
+const logsobject = document.getElementById('logs');
 repoCancelIcon.style.display = 'none';
 repoSuccessIcon.style.display = 'none';
 repoLoadingIcon.style.display = 'inline';
@@ -19,9 +25,42 @@ repoSelect.disabled = true;
 workflowSelect.disabled = true;
 let statusInterval;
 let timerInterval;
+let workflowid;
+
+// Check resolution every time the window is resized
+window.addEventListener('resize', function() {
+    const documentWidth = document.body.clientWidth;
+    if (documentWidth < 750) {
+        logs.style.left = '250px';
+        extendLogsLeft.style.display = 'inline';
+        extendLogsRight.style.display = 'none';
+    } else {
+        logs.style.left = '250';
+        extendLogsLeft.style.display = 'none';
+        extendLogsRight.style.display = 'none';
+    }
+});
+
+extendLogsLeft.addEventListener('click', function() {
+    const documentWidth = document.body.clientWidth;
+    const diff = documentWidth / 4;
+    logs.style.transition = 'left 0.5s';
+    logs.style.left = `${diff}px`;
+    extendLogsLeft.style.display = 'none';
+    extendLogsRight.style.display = 'inline';
+});
+
+extendLogsRight.addEventListener('click', function() {
+    logs.style.transition = 'left 0.5s';
+    logs.style.left = '250px';
+    extendLogsRight.style.display = 'none';
+    extendLogsLeft.style.display = 'inline';
+});
 
 function disableAllInput () {
     button.disabled = true;
+    workflowSelect.disabled = true;
+    repoSelect.disabled = true;
     let inputs = document.getElementsByClassName('input');
     for (let input of inputs) {
         input.disabled = true;
@@ -29,8 +68,10 @@ function disableAllInput () {
 }
 
 function enableAllInput () {
-    let inputs = document.getElementsByClassName('input');
     button.disabled = false;
+    workflowSelect.disabled = false;
+    repoSelect.disabled = false;
+    let inputs = document.getElementsByClassName('input');
     for (let input of inputs) {
         input.disabled = false;
     }
@@ -184,6 +225,35 @@ async function forceCancelRun(run_id) {
                 "run_id": run_id
             }
         )
+    }).then((response) => {
+        if (response.ok) {
+            Notify('info', 'Attempting to cancel workflow');
+        }
+    }).catch((error) => {
+        return;
+    });
+
+    return response;
+}
+
+// Cancel run event listener
+cancelRun.addEventListener('click', async function() {
+    // Ensure the workflow is in the in_progress state
+    if ((statusText.textContent !== 'In Progress' && statusText.textContent !== 'Queued') || !workflowid) {
+        Notify('error', 'Workflow is not in progress');
+        return;
+    }
+
+    await forceCancelRun(workflowid);         
+});
+
+async function fetchLogs(run_id) {
+    const response = await fetch(`http://localhost:8080/api/run/logs?owner=${getUsername()}&repo=${getRepo()}&run_id=${run_id}`,
+    {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json'
+        }
     }).catch((error) => {
         return;
     });
@@ -237,6 +307,10 @@ function getWorkflow() {
     repoSelect.addEventListener('change', async function() {
         // Clear the workflow select
         workflowSelect.innerHTML = '';
+        // Clear the inputs
+        inputs.innerHTML = '';
+        // Hide the inputs section
+        inputcontainer.style.display = 'none';
 
         // Add a blank value to the workflow select
         const blank_value = `
@@ -257,6 +331,7 @@ function getWorkflow() {
         if (!workflows.ok) {
             workflowLoadingIcon.style.display = 'none';
             workflowCancelIcon.style.display = 'inline';
+            button.disabled = true;
             Notify('error', 'No workflows found for this repository');
             return;
         }
@@ -281,14 +356,15 @@ function getWorkflow() {
     // Add event listener to the workflow select
     workflowSelect.addEventListener('change', async function() {
         // Get the workflow inputs and display them
-        const inputs = document.getElementById('inputs');
         inputs.innerHTML = '';
-        inputs.style.display = 'none';
+        inputcontainer.style.display = 'none';
         workflowLoadingIcon.style.display = 'inline';
         workflowSuccessIcon.style.display = 'none';
         workflowCancelIcon.style.display = 'none';
 
         if (workflowSelect.value === '0') {
+            workflowLoadingIcon.style.display = 'none';
+            workflowCancelIcon.style.display = 'inline';
             button.disabled = true;
             return;
         }
@@ -300,7 +376,7 @@ function getWorkflow() {
 
         if(workflowInputs) {
             // Show the inputs section
-            inputs.style.display = 'block';
+            inputcontainer.style.display = 'block';
 
             // Add the inputs to the inputs section
             for (let input of workflowInputs) {
@@ -385,6 +461,7 @@ function getWorkflow() {
 
         // Notify the user that the workflow has started
         Notify('success', 'Workflow started successfully');
+        logsobject.innerHTML = '';
 
         // Get the run id
         const data = await workflowRuns.json();
@@ -458,20 +535,7 @@ function getWorkflow() {
             return;
         }
 
-        // Cancel run event listener
-        cancelRun.addEventListener('click', async function() {
-            // Ensure the workflow is in the in_progress state
-            if (statusText.textContent !== 'In Progress' && statusText.textContent !== 'Queued') {
-                Notify('error', 'Workflow is not in progress');
-                return;
-            }
-
-            const cancelRunResponse = await forceCancelRun(latestWorkflow.id);
-
-            if (cancelRunResponse.ok) {
-                Notify('info', 'Attempting to cancel workflow');
-            }            
-        });
+        workflowid = latestWorkflow.id;
     
         statusInterval = setInterval(async function() {
             let statusResponse = await getStatus(latestWorkflow.id);
@@ -497,6 +561,8 @@ function getWorkflow() {
 
             switch (status) {
                 case 'queued':
+                    // Check if the existing statusw is in progress
+                    if (statusText.textContent === 'In Progress') return;
                     progress.style.width = '10%';
                     statusText.textContent = 'Queued';
                     break;
@@ -542,6 +608,61 @@ function getWorkflow() {
             if (status !== 'queued' && status !== 'in_progress') {
                 clearInterval(statusInterval);
                 clearInterval(timerInterval);
+                {
+                    let element = `
+                    <div class="log">
+                        <p class="log-date"></p>
+                        <p class="log-content">Fetching logs...</p>
+                    </div>
+                `
+                logsobject.innerHTML += element; 
+                }
+                const logsResponse = await fetchLogs(latestWorkflow.id);
+                const logsData = await logsResponse.json();
+                const _logs = logsData.logs;
+                if (!_logs) return;
+                _logs.forEach(log => {
+                    let formattedLog = log.content.replace(/\n/g, '<br>');
+                    // Ready each line in the log
+                    formattedLog = formattedLog.split('<br>').map((line) => {
+                        if (line !== '') {
+                            let firstword = line.split(' ')[0];
+                            let date = new Date(firstword).toLocaleString();
+                            var newline = line.replace(firstword, '');
+                            
+                            if (newline.includes('##[error]')) {
+                                newline = newline.replace(`##[error]`, 'Error: ');
+                                let element = `
+                                <div class="log">
+                                    <p class="log-date">${date}</p>
+                                    <p class="log-content white red-highlight">${newline}</p>
+                                </div>
+                            `
+                            logsobject.innerHTML += element;
+                            } else {
+                                let element = `
+                                <div class="log">
+                                    <p class="log-date">${date}</p>
+                                    <p class="log-content">${newline}</p>
+                                </div>
+                            `
+                            logsobject.innerHTML += element;
+                            }
+                        }
+                    })
+                });
+
+                // Wait 2 seconds before scrolling to the bottom
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                // Scroll to the element that contains red-highlight if it exists over 1 second
+                const redHighlight = document.getElementsByClassName('red-highlight');
+                if (redHighlight.length > 0) {
+                    // Scroll to 2 elements above the red-highlight element
+                    redHighlight[0].scrollIntoView({behavior: 'smooth', block: 'center'});
+                } else {
+                    logsobject.scrollIntoView({behavior: 'smooth'});
+                }
             }
         }, 1000);
     });

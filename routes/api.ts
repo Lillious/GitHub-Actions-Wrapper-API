@@ -1,6 +1,10 @@
 import octokit from '../modules/octopkit';
+const yauzl = require("yauzl");
+import path from 'path';
+import http from 'http';
 import crypto from 'crypto';
 import yaml from 'yaml';
+import fs from 'fs';
 import express from 'express';
 export const router = express.Router();
 const baseUri = '/api';
@@ -39,6 +43,8 @@ router.get(`${baseUri}/workflows`, async (req, res) => {
             } as ResponseMessage
         );
     });
+
+    if (!response) return;
 
     let workflows = response?.data?.workflows;
 
@@ -85,6 +91,8 @@ router.get(`${baseUri}/workflow`, async (req, res) => {
             } as ResponseMessage
         );
     });
+
+    if (!response) return;
 
     let workflows = response?.data?.workflows;
 
@@ -147,13 +155,7 @@ router.post(`${baseUri}/workflow`, async (req, res) => {
         );
     });
 
-    if (!response)
-        return res.status(500).send(
-            {
-                code: 500,
-                message: 'An error occurred while dispatching workflow'
-            } as ResponseMessage
-        );
+    if (!response) return;
 
     res.status(200).send(
         {
@@ -190,6 +192,8 @@ router.get(`${baseUri}/run/details`, async (req, res) => {
             } as ResponseMessage
         );
     });
+
+    if (!response) return;
 
     let runs = response?.data?.workflow_runs;
 
@@ -242,6 +246,8 @@ router.get(`${baseUri}/run/status`, async (req, res) => {
         );
     });
 
+    if (!response) return;
+
     let run = response?.data;
 
     if (!run)
@@ -272,6 +278,8 @@ router.get(`${baseUri}/user`, async (req, res) => {
         );
     });
 
+    if (!response) return;
+
     let user = response?.data;
 
     if (!user)
@@ -301,6 +309,8 @@ router.get(`${baseUri}/repositories`, async (req, res) => {
             } as ResponseMessage
         );
     });
+
+    if (!response) return;
 
     let repositories = response?.data;
 
@@ -349,6 +359,8 @@ router.get(`${baseUri}/workflow/inputs`, async (req, res) => {
             } as ResponseMessage
         );
     });
+
+    if (!response) return;
 
     let data = response?.data as any;
 
@@ -419,6 +431,8 @@ router.get(`${baseUri}/runs`, async (req, res) => {
         );
     });
 
+    if (!response) return;
+
     let runs = response?.data?.workflow_runs;
 
     if (!runs || runs.length === 0)
@@ -474,6 +488,8 @@ router.get(`${baseUri}/run/jobs`, async (req, res) => {
             } as ResponseMessage
         );
     });
+
+    if (!response) return;
 
     let jobs = response?.data?.jobs
 
@@ -546,17 +562,117 @@ router.post(`${baseUri}/run/cancel`, async (req, res) => {
         );
     });
 
-    if (!response)
-        return res.status(500).send(
-            {
-                code: 500,
-                message: 'An error occurred while cancelling run'
-            } as ResponseMessage
-        );
+    if (!response) return;
 
     res.status(200).send(
         {
             code: 200,
             message: 'Run cancelled'
         } as ResponseMessage);
+});
+
+// Get logs for a specific run
+router.get(`${baseUri}/run/logs`, async (req, res) => {
+    let { owner, repo, run_id } = req.query as { owner: string, repo: string, run_id: string };
+
+    if (!owner || !repo || !run_id)
+        return res.status(400).send(
+            {
+                code: 400,
+                message: 'owner, repo, and run_id are required parameters'
+            } as ResponseMessage
+        );
+        
+    if (isNaN(Number(run_id)))
+        return res.status(400).send(
+            {
+                code: 400,
+                message: 'run_id must be a number'
+            } as ResponseMessage
+        );
+
+    let response = await octokit.request('GET /repos/{owner}/{repo}/actions/runs/{run_id}/logs', {
+        owner,
+        repo,
+        run_id: Number(run_id),
+        headers: {
+          'X-GitHub-Api-Version': apiVersion,
+          'accept': 'application/vnd.github+json'
+        }
+      }).catch((err) => {
+        res.status(500).send(
+            {
+                code: 500,
+                message: `An error occurred while fetching run logs: ${err.message}`
+            } as ResponseMessage
+        );
+    });
+
+    if (!response) return;
+
+    // Make a files directory if it doesn't exist
+    const dir = path.join(import.meta.dir, '..', 'files');
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir);
+    }
+    let runDir = path.join(dir, run_id);
+
+    let url = response?.url;
+    const filePath = path.join(dir, `${run_id}.zip`);
+    const file = fs.createWriteStream(filePath);
+    http.get(url, function(response) {
+       response.pipe(file);
+
+       file.on("finish", () => {
+           file.close();
+       });
+
+       file.on("close", async () => {
+        yauzl.open(filePath, {lazyEntries: true}, function(err: any, zipfile: any) {
+            if (err) throw err;
+            zipfile.readEntry();
+            zipfile.on("entry", function(entry: any) {
+                if (/\/$/.test(entry.fileName)) {
+                    // Directory file names end with '/'
+                    fs.mkdir(path.join(runDir, entry.fileName), { recursive: true }, (err: any) => {
+                        if (err) throw err;
+                        zipfile.readEntry();
+                    });
+                } else {
+                    // Ensure parent directory exists
+                    fs.mkdir(path.join(runDir, path.dirname(entry.fileName)), { recursive: true }, (err: any) => {
+                        if (err) throw err;
+                        zipfile.openReadStream(entry, function(err: any, readStream: any) {
+                            if (err) throw err;
+                            readStream.on("end", function() {
+                                zipfile.readEntry();
+                            });
+                            
+                            readStream.pipe(fs.createWriteStream(path.join(runDir, entry.fileName)));
+                        });
+                    });
+                }
+            });
+            zipfile.on("end", function() {
+                let logs = fs.readdirSync(runDir).filter((f: string) => f.startsWith('0_') && f.endsWith('.txt'));
+                let logContent: { name: string, content: string }[] = [];
+
+                for (const log of logs) {
+                    const content = fs.readFileSync(path.join(runDir, log), 'utf-8');
+                    const name = log.replace('.txt', '').replace('0_', '');
+                    logContent.push({ name, content });
+                }
+
+                res.send({
+                    logs: logContent
+                });
+
+                // Delete the zip file and the extracted files
+                fs.unlinkSync(filePath);
+                fs.rmdirSync(runDir, { recursive: true });
+            });
+        });
+       });
+    });
+
 });
