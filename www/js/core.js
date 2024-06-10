@@ -160,28 +160,8 @@ async function getWorkflowRuns(result) {
     return response;
 }
 
-async function getLatestWorkflowRuns() {
-    const response = await fetch(`http://localhost:8080/api/runs?owner=${getUsername()}&repo=${getRepo()}&workflow=${getWorkflow()}`,
-    {
-        method: 'GET',
-        headers: {
-            'Content-Type': 'application/json'
-        }
-    }).catch((error) => {
-        clearInterval(statusInterval);
-        clearInterval(timerInterval);
-        statusText.textContent = 'Failed';
-        progress.style.backgroundColor = 'tomato';
-        enableAllInput();
-        Notify('error', 'Failed to fetch latest workflows');
-        return;
-    });
-
-    return response;
-}
-
-async function getJobs(run_id, id) {
-    const response = await fetch(`http://localhost:8080/api/run/jobs?owner=${getUsername()}&repo=${getRepo()}&run_id=${run_id}&id=${id}`,
+async function getJobs(id) {
+    const response = await fetch(`http://localhost:8080/api/run/jobs?owner=${getUsername()}&repo=${getRepo()}&workflow=${getWorkflow()}&id=${id}`,
     {
         method: 'GET',
         headers: {
@@ -482,7 +462,7 @@ function getWorkflow() {
             let seconds = parseInt(time[2]);
 
             // Process stops after 45 seconds if it is still queued
-            if (seconds >= 60 && statusText.textContent === 'Queued') {
+            if (seconds >= 45 && statusText.textContent === 'Queued') {
                 clearInterval(statusInterval);
                 clearInterval(timerInterval);
                 statusText.textContent = 'Timed Out';
@@ -505,40 +485,25 @@ function getWorkflow() {
 
             timer.textContent = `${hours < 10 ? '0' + hours : hours}:${minutes < 10 ? '0' + minutes : minutes}:${seconds < 10 ? '0' + seconds : seconds}`;
         }, 1000);
-
-        // Wait for 5 seconds before fetching the latest workflows
-        await new Promise(resolve => setTimeout(resolve, 5000));
         
-        const latestWorkflows = await getLatestWorkflowRuns();
+        const jobs = await getJobs(id);
+        const jobData = await jobs.json();
 
-        if (!latestWorkflows.ok) {
-            clearInterval(statusInterval);
-            clearInterval(timerInterval);
-            statusText.textContent = 'Failed';
-            progress.style.backgroundColor = 'tomato';
-            enableAllInput();
-            Notify('error', 'Failed to fetch latest workflows');
-            return;
-        }
-
-        const latestWorkflowsData = await latestWorkflows.json();
-        const latestWorkflow = latestWorkflowsData.runs[0];
-        const jobs = await getJobs(latestWorkflow.id, id);
 
         if (!jobs.ok) {
             clearInterval(statusInterval);
             clearInterval(timerInterval);
-            statusText.textContent = 'Failed';
+            statusText.textContent = 'Connection Error';
             progress.style.backgroundColor = 'tomato';
             enableAllInput();
             Notify('error', 'Failed to fetch jobs');
             return;
         }
 
-        workflowid = latestWorkflow.id;
+        workflowid = jobData.job_id;
     
         statusInterval = setInterval(async function() {
-            let statusResponse = await getStatus(latestWorkflow.id);
+            let statusResponse = await getStatus(workflowid);
     
             if (!statusResponse.ok) {
                 clearInterval(statusInterval);
@@ -550,8 +515,8 @@ function getWorkflow() {
             }
     
             let statusData = await statusResponse.json();
-            let status = statusData.run.status;
-            let conclusion = statusData.run.conclusion;
+            let status = statusData.response.status;
+            let conclusion = statusData.response.conclusion;
 
             // If the status is timed out, stop the interval
             if (statusText.textContent === 'Timed Out') {
@@ -617,10 +582,14 @@ function getWorkflow() {
                 `
                 logsobject.innerHTML += element; 
                 }
-                const logsResponse = await fetchLogs(latestWorkflow.id);
+                const logsResponse = await fetchLogs(workflowid);
                 const logsData = await logsResponse.json();
                 const _logs = logsData.logs;
-                if (!_logs) return;
+                if (!_logs) {
+                    Notify('error', 'Failed to fetch logs');
+                    logsobject.innerHTML = '';
+                    return;
+                }
                 _logs.forEach(log => {
                     let formattedLog = log.content.replace(/\n/g, '<br>');
                     // Ready each line in the log

@@ -1,4 +1,3 @@
-import octokit from '../modules/octopkit';
 const yauzl = require("yauzl");
 import path from 'path';
 import http from 'http';
@@ -7,18 +6,34 @@ import yaml from 'yaml';
 import fs from 'fs';
 import express from 'express';
 export const router = express.Router();
-const baseUri = '/api';
-const apiVersion = '2022-11-28';
+
+const config = {
+    baseUrl: '/api',
+    version: '2022-11-28',
+    githubApi: 'https://api.github.com',
+    token: process.env.GITHUB_TOKEN
+};
+
+router.use(`${config.baseUrl}`, (req, res, next) => {
+    if (!config.token)
+        return res.status(401).send(
+            {
+                code: 401,
+                message: 'No token provided'
+            } as ResponseMessage
+        );
+    next();
+});
 
 // Get the status of the API
-router.get(`${baseUri}/status`, (req, res) => {
+router.get(`${config.baseUrl}/status`, (req, res) => {
     res.send({
         status: 'OK'
     });
 });
 
 // Get all workflows for a repository
-router.get(`${baseUri}/workflows`, async (req, res) => {
+router.get(`${config.baseUrl}/workflows`, async (req, res) => {
     let { owner, repo } = req.query as { owner: string, repo: string };
 
     if (!owner || !repo)
@@ -28,14 +43,16 @@ router.get(`${baseUri}/workflows`, async (req, res) => {
                 message: 'owner and repo are required parameters'
             } as ResponseMessage
         );
-        
-    let response = await octokit.request('GET /repos/{owner}/{repo}/actions/workflows', {
-        owner,
-        repo,
+
+    let response = await fetch(`${config.githubApi}/repos/${owner}/${repo}/actions/workflows`, {
+        method: 'GET',
         headers: {
-          'X-GitHub-Api-Version': apiVersion
+            "Authorization": `Bearer ${config.token}`,
+            'X-GitHub-Api-Version': config.version
         }
-      }).catch((err) => {
+    })
+    .then((res) => res.json())
+    .catch((err) => {
         res.status(500).send(
             {
                 code: 500,
@@ -44,9 +61,7 @@ router.get(`${baseUri}/workflows`, async (req, res) => {
         );
     });
 
-    if (!response) return;
-
-    let workflows = response?.data?.workflows;
+    let workflows = response?.workflows;
 
     if (!workflows || workflows.length === 0)
         return res.status(404).send(
@@ -65,7 +80,7 @@ router.get(`${baseUri}/workflows`, async (req, res) => {
 });
 
 // Search for a specific workflow by name
-router.get(`${baseUri}/workflow`, async (req, res) => {
+router.get(`${config.baseUrl}/workflow`, async (req, res) => {
     let { owner, repo, workflow } = req.query as { owner: string, repo: string, workflow: string };
 
     if (!owner || !repo || !workflow)
@@ -75,15 +90,16 @@ router.get(`${baseUri}/workflow`, async (req, res) => {
                 message: 'owner, repo, and workflow are required parameters'
             } as ResponseMessage
         );
-        
-    let response = await octokit.request('GET /repos/{owner}/{repo}/actions/workflows', {
-        owner,
-        repo,
+
+    let response = await fetch(`${config.githubApi}/repos/${owner}/${repo}/actions/workflows`, {
+        method: 'GET',
         headers: {
-          'X-GitHub-Api-Version': apiVersion
+            "Authorization": `Bearer ${config.token}`,
+            'X-GitHub-Api-Version': config.version
         }
-      })
-      .catch((err) => {
+    })
+    .then((res) => res.json())
+    .catch((err) => {
         res.status(500).send(
             {
                 code: 500,
@@ -94,7 +110,7 @@ router.get(`${baseUri}/workflow`, async (req, res) => {
 
     if (!response) return;
 
-    let workflows = response?.data?.workflows;
+    let workflows = response?.workflows;
 
     if (!workflows || workflows.length === 0)
         return res.status(404).send(
@@ -120,7 +136,7 @@ router.get(`${baseUri}/workflow`, async (req, res) => {
 });
 
 // Dispatch a workflow with optional inputs
-router.post(`${baseUri}/workflow`, async (req, res) => {
+router.post(`${config.baseUrl}/workflow`, async (req, res) => {
     let { owner, repo, workflow_id, ref, inputs } = req.body as { owner: string, repo: string, workflow_id: string | number, ref: string, inputs: any};
 
     if (!owner || !repo || !workflow_id || !ref) 
@@ -137,16 +153,20 @@ router.post(`${baseUri}/workflow`, async (req, res) => {
    
     [inputs.id] = [random];
 
-    let response = await octokit.request('POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches', {
-        owner,
-        repo,
-        workflow_id: `${workflow_id}.yml`,
-        ref,
-        inputs,
+    let response = await fetch(`${config.githubApi}/repos/${owner}/${repo}/actions/workflows/${workflow_id}.yml/dispatches`, {
+        method: 'POST',
         headers: {
-          'X-GitHub-Api-Version': apiVersion
-        }
-      }).catch((err) => {
+            "Authorization": `Bearer ${config.token}`,
+            'X-GitHub-Api-Version': config.version,
+            "Accept": "application/vnd.github+json"
+        },
+        body: JSON.stringify({
+            ref,
+            inputs
+        })
+    })
+    .then((res) => res.status)
+    .catch((err) => {
         res.status(500).send(
             {
                 code: 500,
@@ -155,18 +175,24 @@ router.post(`${baseUri}/workflow`, async (req, res) => {
         );
     });
 
-    if (!response) return;
+    if (!response || response !== 204)
+        return res.status(404).send(
+            {
+                code: 404,
+                message: 'No workflows found'
+            } as ResponseMessage
+        );
 
-    res.status(200).send(
+    res.status(201).send(
         {
-            code: 200,
+            code: 201,
             message: 'Workflow dispatched',
             id: random
         } as ResponseMessage);
 });
 
 // Get the run details for a workflow where the job uuid matches the input uuid
-router.get(`${baseUri}/run/details`, async (req, res) => {
+router.get(`${config.baseUrl}/run/details`, async (req, res) => {
     let { owner, repo, workflow, uuid } = req.query as { owner: string, repo: string, workflow: string | number, uuid: string };
 
     if (!owner || !repo || !workflow)
@@ -176,15 +202,16 @@ router.get(`${baseUri}/run/details`, async (req, res) => {
                 message: 'owner, repo, and workflow_id are required parameters'
             } as ResponseMessage
         );
-        
-    let response = await octokit.request('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
-        owner,
-        repo,
-        workflow_id: `${workflow}.yml`,
+
+    let response = await fetch(`${config.githubApi}/repos/${owner}/${repo}/actions/workflows/${workflow}/runs`, {
+        method: 'GET',
         headers: {
-          'X-GitHub-Api-Version': apiVersion
+            "Authorization": `Bearer ${config.token}`,
+            'X-GitHub-Api-Version': config.version
         }
-      }).catch((err) => {
+    })
+    .then((res) => res.json())
+    .catch((err) => {
         res.status(500).send(
             {
                 code: 500,
@@ -193,9 +220,7 @@ router.get(`${baseUri}/run/details`, async (req, res) => {
         );
     });
 
-    if (!response) return;
-
-    let runs = response?.data?.workflow_runs;
+    let runs = response?.workflow_runs;
 
     if (!runs || runs.length === 0)
         return res.status(404).send(
@@ -211,7 +236,7 @@ router.get(`${baseUri}/run/details`, async (req, res) => {
 });
 
 // Get the status for a specific run
-router.get(`${baseUri}/run/status`, async (req, res) => {
+router.get(`${config.baseUrl}/run/status`, async (req, res) => {
     let { owner, repo, run_id } = req.query as { owner: string, repo: string, run_id: string };
 
     if (!owner || !repo || !run_id)
@@ -230,14 +255,15 @@ router.get(`${baseUri}/run/status`, async (req, res) => {
             } as ResponseMessage
         );
 
-    let response = await octokit.request('GET /repos/{owner}/{repo}/actions/runs/{run_id}', {
-        owner,
-        repo,
-        run_id: Number(run_id),
+    let response = await fetch(`${config.githubApi}/repos/${owner}/${repo}/actions/runs/${run_id}`, {
+        method: 'GET',
         headers: {
-          'X-GitHub-Api-Version': apiVersion
+            "Authorization": `Bearer ${config.token}`,
+            'X-GitHub-Api-Version': config.version
         }
-      }).catch((err) => {
+    })
+    .then((res) => res.json())
+    .catch((err) => {
         res.status(500).send(
             {
                 code: 500,
@@ -246,11 +272,7 @@ router.get(`${baseUri}/run/status`, async (req, res) => {
         );
     });
 
-    if (!response) return;
-
-    let run = response?.data;
-
-    if (!run)
+    if (!response)
         return res.status(404).send(
             {
                 code: 404,
@@ -259,17 +281,21 @@ router.get(`${baseUri}/run/status`, async (req, res) => {
         );
 
     res.send({
-        run
+        response
     });
 });
 
 // List the user the token is authenticated as
-router.get(`${baseUri}/user`, async (req, res) => {
-    let response = await octokit.request('GET /user', {
+router.get(`${config.baseUrl}/user`, async (req, res) => {
+    let response = await fetch(`${config.githubApi}/user`, {
+        method: 'GET',
         headers: {
-          'X-GitHub-Api-Version': apiVersion
+            "Authorization": `Bearer ${config.token}`,
+            'X-GitHub-Api-Version': config.version
         }
-      }).catch((err) => {
+    })
+    .then((res) => res.json())
+    .catch((err) => {
         res.status(500).send(
             {
                 code: 500,
@@ -278,11 +304,7 @@ router.get(`${baseUri}/user`, async (req, res) => {
         );
     });
 
-    if (!response) return;
-
-    let user = response?.data;
-
-    if (!user)
+    if (!response)
         return res.status(404).send(
             {
                 code: 404,
@@ -291,17 +313,21 @@ router.get(`${baseUri}/user`, async (req, res) => {
         );
 
     res.send({
-        login: user.login
+        login: response.login
     });
 });
 
 // List all public and private repositories for the authenticated user
-router.get(`${baseUri}/repositories`, async (req, res) => {
-    let response = await octokit.request('GET /user/repos?per_page=100', {
+router.get(`${config.baseUrl}/repositories`, async (req, res) => {
+    let response = await fetch(`${config.githubApi}/user/repos?per_page=100`, {
+        method: 'GET',
         headers: {
-          'X-GitHub-Api-Version': apiVersion
+            "Authorization": `Bearer ${config.token}`,
+            'X-GitHub-Api-Version': config.version
         }
-      }).catch((err) => {
+    })
+    .then((res) => res.json())
+    .catch((err) => {
         res.status(500).send(
             {
                 code: 500,
@@ -310,11 +336,7 @@ router.get(`${baseUri}/repositories`, async (req, res) => {
         );
     });
 
-    if (!response) return;
-
-    let repositories = response?.data;
-
-    if (!repositories || repositories.length === 0)
+    if (!response || response.length === 0)
         return res.status(404).send(
             {
                 code: 404,
@@ -322,7 +344,7 @@ router.get(`${baseUri}/repositories`, async (req, res) => {
             } as ResponseMessage
         );
 
-    let names = repositories.map((r: any) => r.full_name);
+    let names = response.map((r: any) => r.full_name);
 
     res.send({
         repositories: names
@@ -330,7 +352,7 @@ router.get(`${baseUri}/repositories`, async (req, res) => {
 });
 
 // Get the inputs for a specific workflow
-router.get(`${baseUri}/workflow/inputs`, async (req, res) => {
+router.get(`${config.baseUrl}/workflow/inputs`, async (req, res) => {
     let { owner, repo, workflow } = req.query as { owner: string, repo: string, workflow: string };
 
     if (!owner || !repo || !workflow)
@@ -342,16 +364,16 @@ router.get(`${baseUri}/workflow/inputs`, async (req, res) => {
         );
     
     workflow = `.github/workflows/${workflow}.yml`;
-        
-    let response = await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
-        owner,
-        repo,
-        path: workflow,
+
+    let response = await fetch(`${config.githubApi}/repos/${owner}/${repo}/contents/${workflow}`, {
+        method: 'GET',
         headers: {
-          'X-GitHub-Api-Version': apiVersion,
-          'accept': 'application/vnd.github+json'
+            "Authorization": `Bearer ${config.token}`,
+            'X-GitHub-Api-Version': config.version
         }
-      }).catch((err) => {
+    })
+    .then((res) => res.json())
+    .catch((err) => {
         res.status(500).send(
             {
                 code: 500,
@@ -360,11 +382,7 @@ router.get(`${baseUri}/workflow/inputs`, async (req, res) => {
         );
     });
 
-    if (!response) return;
-
-    let data = response?.data as any;
-
-    if (!data)
+    if (!response)
         return res.status(404).send(
             {
                 code: 404,
@@ -373,7 +391,7 @@ router.get(`${baseUri}/workflow/inputs`, async (req, res) => {
         );
     try {
 
-        let content = Buffer.from(data.content, 'base64').toString('utf-8');
+        let content = Buffer.from(response.content, 'base64').toString('utf-8');
         let parsed = yaml.parse(content);
         let inputs = parsed.on.workflow_dispatch.inputs || {};
     
@@ -403,131 +421,98 @@ router.get(`${baseUri}/workflow/inputs`, async (req, res) => {
 
 });
 
-// Get all runs in the last 5 minutes
-router.get(`${baseUri}/runs`, async (req, res) => {
-    let { owner, repo, workflow } = req.query as { owner: string, repo: string, workflow: string };
-
-    if (!owner || !repo || !workflow)
-        return res.status(400).send(
-            {
-                code: 400,
-                message: 'owner, repo, and workflow are required parameters'
-            } as ResponseMessage
-        );
-        
-    let response = await octokit.request('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
-        owner,
-        repo,
-        workflow_id: `${workflow}.yml`,
-        headers: {
-          'X-GitHub-Api-Version': apiVersion
-        }
-      }).catch((err) => {
-        res.status(500).send(
-            {
-                code: 500,
-                message: `An error occurred while fetching workflow status: ${err.message}`
-            } as ResponseMessage
-        );
-    });
-
-    if (!response) return;
-
-    let runs = response?.data?.workflow_runs;
-
-    if (!runs || runs.length === 0)
-        return res.status(404).send(
-            {
-                code: 404,
-                message: 'No workflow runs found'
-            } as ResponseMessage
-        );
-
-    let now = new Date();
-    let fiveMinutesAgo = new Date(now.getTime() - 5 * 60000);
-
-    runs = runs.filter((r: any) => new Date(r.created_at) > fiveMinutesAgo);
-
-    res.send({
-        runs
-    });
-});
-
 // Get jobs for a specific run
-router.get(`${baseUri}/run/jobs`, async (req, res) => {
-    let { owner, repo, run_id, id } = req.query as { owner: string, repo: string, run_id: string, id: string};
+router.get(`${config.baseUrl}/run/jobs`, async (req, res) => {
+    let { owner, repo, workflow, id } = req.query as { owner: string, repo: string, workflow: string, id: string};
 
-    if (!owner || !repo || !run_id || !id)
+    if (!owner || !repo || !workflow || !id)
         return res.status(400).send(
             {
                 code: 400,
                 message: 'owner, repo, and run_id are required parameters'
             } as ResponseMessage
         );
-        
-    if (isNaN(Number(run_id)))
-        return res.status(400).send(
-            {
-                code: 400,
-                message: 'run_id must be a number'
-            } as ResponseMessage
-        );
 
-    let response = await octokit.request('GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs', {
-        owner,
-        repo,
-        run_id: Number(run_id),
-        headers: {
-          'X-GitHub-Api-Version': apiVersion
-        }
-      }).catch((err) => {
-        res.status(500).send(
-            {
-                code: 500,
-                message: `An error occurred while fetching run jobs: ${err.message}`
-            } as ResponseMessage
-        );
-    });
+    let attempts = 0;
+    while (attempts < 10) {
+        await new Promise(r => setTimeout(r, 1000));
+        attempts++;
 
-    if (!response) return;
-
-    let jobs = response?.data?.jobs
-
-    if (!jobs || jobs.length === 0)
-        return res.status(404).send(
-            {
-                code: 404,
-                message: 'No jobs found'
-            } as ResponseMessage
-        );
-
-    let job = jobs[0];
-    let steps = job.steps?.map((s: any) => s.name);
-    if (!steps)
-        return res.status(404).send(
-            {
-                code: 404,
-                message: 'No steps found'
-            } as ResponseMessage
-        );
-        
-    // Filter step name by ${id}
-    steps = steps?.filter((s: any) => s.includes(id));
-    if (!steps)
-        return res.status(404).send(
-            {
-                code: 404,
-                message: 'No steps found'
-            } as ResponseMessage
-        );
+        let workflows = await fetch(`${config.githubApi}/repos/${owner}/${repo}/actions/workflows/${workflow}.yml/runs`, {
+            method: 'GET',
+            headers: {
+                "Authorization": `Bearer ${config.token}`,
+                'X-GitHub-Api-Version': config.version
+            }
+        })
+        .then((res) => res.json())
+        .catch((err) => {
+            res.status(500).send(
+                {
+                    code: 500,
+                    message: `An error occurred while fetching workflow status: ${err.message}`
+                } as ResponseMessage
+            );
+        });
     
-    res.send({
-        id
-    });
+        let runs = workflows?.workflow_runs;
+        if (!runs || runs.length === 0)
+            return res.status(404).send(
+                {
+                    code: 404,
+                    message: 'No workflow runs found'
+                } as ResponseMessage
+            );
+
+        let now = new Date();
+        let fiveMinutesAgo = new Date(now.getTime() - 5 * 60000);
+        runs = runs.filter((r: any) => new Date(r.created_at) > fiveMinutesAgo);
+
+        runs.forEach(async (w: any) => {
+             let response = await fetch(`${config.githubApi}/repos/${owner}/${repo}/actions/runs/${w.id}/jobs`, {
+                 method: 'GET',
+                 headers: {
+                     "Authorization": `Bearer ${config.token}`,
+                     'X-GitHub-Api-Version': config.version
+                 }
+             })
+             .then((res) => res.json())
+             .catch((err) => {
+                 res.status(500).send(
+                     {
+                         code: 500,
+                         message: `An error occurred while fetching run jobs: ${err.message}`
+                     } as ResponseMessage
+                 );
+             });
+
+            let jobs = response?.jobs;
+
+            // Loop over each job and each step and log the step name with the corresponding job run id
+            let jobSteps: { id: string, steps: string[] }[] = [];
+            jobs.forEach((job: any) => {
+                let steps = job.steps.map((s: any) => s.name);
+                jobSteps.push({
+                    id: job.run_id,
+                    steps
+                });
+            });
+
+             // For each jobsteps check if the steps include the input id, if so return the job id
+            let job = jobSteps.find((j: any) => j.steps.includes(id));
+            if (job) {
+                res.send({
+                    job_id: job.id
+                });
+                attempts = 10;
+                return;
+            }
+         });
+    }
 });
 
 // Cancel a specific run
-router.post(`${baseUri}/run/cancel`, async (req, res) => {
+router.post(`${config.baseUrl}/run/cancel`, async (req, res) => {
     let { owner, repo, run_id } = req.body as { owner: string, repo: string, run_id: string };
 
     if (!owner || !repo || !run_id)
@@ -546,14 +531,15 @@ router.post(`${baseUri}/run/cancel`, async (req, res) => {
             } as ResponseMessage
         );
 
-    let response = await octokit.request('POST /repos/{owner}/{repo}/actions/runs/{run_id}/force-cancel', {
-        owner,
-        repo,
-        run_id: Number(run_id),
+    let response = await fetch(`${config.githubApi}/repos/${owner}/${repo}/actions/runs/${run_id}/cancel`, {
+        method: 'POST',
         headers: {
-          'X-GitHub-Api-Version': apiVersion
+            "Authorization": `Bearer ${config.token}`,
+            'X-GitHub-Api-Version': config.version
         }
-      }).catch((err) => {
+    })
+    .then((res) => res.json())
+    .catch((err) => {
         res.status(500).send(
             {
                 code: 500,
@@ -572,7 +558,7 @@ router.post(`${baseUri}/run/cancel`, async (req, res) => {
 });
 
 // Get logs for a specific run
-router.get(`${baseUri}/run/logs`, async (req, res) => {
+router.get(`${config.baseUrl}/run/logs`, async (req, res) => {
     let { owner, repo, run_id } = req.query as { owner: string, repo: string, run_id: string };
 
     if (!owner || !repo || !run_id)
@@ -591,15 +577,15 @@ router.get(`${baseUri}/run/logs`, async (req, res) => {
             } as ResponseMessage
         );
 
-    let response = await octokit.request('GET /repos/{owner}/{repo}/actions/runs/{run_id}/logs', {
-        owner,
-        repo,
-        run_id: Number(run_id),
+    let response = await fetch(`${config.githubApi}/repos/${owner}/${repo}/actions/runs/${run_id}/logs`, {
+        method: 'GET',
         headers: {
-          'X-GitHub-Api-Version': apiVersion,
-          'accept': 'application/vnd.github+json'
+            "Authorization": `Bearer ${config.token}`,
+            'X-GitHub-Api-Version': config.version
         }
-      }).catch((err) => {
+    })
+    .catch((err) => {
+        console.log(err);
         res.status(500).send(
             {
                 code: 500,
