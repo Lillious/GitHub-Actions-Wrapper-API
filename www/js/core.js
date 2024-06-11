@@ -526,7 +526,7 @@ function getWorkflow() {
 
             switch (status) {
                 case 'queued':
-                    // Check if the existing statusw is in progress
+                    // Check if the existing status is in progress
                     if (statusText.textContent === 'In Progress') return;
                     progress.style.width = '10%';
                     statusText.textContent = 'Queued';
@@ -539,24 +539,32 @@ function getWorkflow() {
                 case 'completed':
                     switch (conclusion) {
                         case 'success':
+                            clearInterval(statusInterval);
+                            clearInterval(timerInterval);
                             enableAllInput();
                             progress.style.width = '100%';
                             progress.style.backgroundColor = '#28a745';
                             statusText.textContent = `Completed - ${new Date().toLocaleString()}`;
                             break;
                         case 'failure':
+                            clearInterval(statusInterval);
+                            clearInterval(timerInterval);
                             enableAllInput();
                             progress.style.width = '100%';
                             progress.style.backgroundColor = 'tomato';
                             statusText.textContent = `Failed - ${new Date().toLocaleString()}`;
                             break;
                         case 'cancelled':
+                            clearInterval(statusInterval);
+                            clearInterval(timerInterval);
                             Notify('success', 'Cancelled workflow');
                             enableAllInput();
                             progress.style.backgroundColor = 'grey';
                             statusText.textContent = `Cancelled - ${new Date().toLocaleString()}`;
                             break;
                         default:
+                            clearInterval(statusInterval);
+                            clearInterval(timerInterval);
                             enableAllInput();
                             progress.style.backgroundColor = 'grey';
                             statusText.textContent = 'Unknown';
@@ -573,15 +581,7 @@ function getWorkflow() {
             if (status !== 'queued' && status !== 'in_progress') {
                 clearInterval(statusInterval);
                 clearInterval(timerInterval);
-                {
-                    let element = `
-                    <div class="log">
-                        <p class="log-date"></p>
-                        <p class="log-content">Fetching logs...</p>
-                    </div>
-                `
-                logsobject.innerHTML += element; 
-                }
+                Notify('info', 'Fetching logs');
                 const logsResponse = await fetchLogs(workflowid);
                 const logsData = await logsResponse.json();
                 const _logs = logsData.logs;

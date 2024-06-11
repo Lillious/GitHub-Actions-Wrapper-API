@@ -434,7 +434,7 @@ router.get(`${config.baseUrl}/run/jobs`, async (req, res) => {
         );
 
     let attempts = 0;
-    while (attempts < 10) {
+    while (attempts < 40) {
         await new Promise(r => setTimeout(r, 1000));
         attempts++;
 
@@ -504,7 +504,7 @@ router.get(`${config.baseUrl}/run/jobs`, async (req, res) => {
                 res.send({
                     job_id: job.id
                 });
-                attempts = 10;
+                attempts = 40;
                 return;
             }
          });
@@ -605,7 +605,9 @@ router.get(`${config.baseUrl}/run/logs`, async (req, res) => {
 
     let url = response?.url;
     const filePath = path.join(dir, `${run_id}.zip`);
-    const file = fs.createWriteStream(filePath);
+    const file = fs.createWriteStream(filePath).on('error', (err: any) => {
+        return console.error(err);
+    });
     http.get(url, function(response) {
        response.pipe(file);
 
@@ -615,26 +617,29 @@ router.get(`${config.baseUrl}/run/logs`, async (req, res) => {
 
        file.on("close", async () => {
         yauzl.open(filePath, {lazyEntries: true}, function(err: any, zipfile: any) {
-            if (err) throw err;
+            if (err) return console.log(err);
             zipfile.readEntry();
             zipfile.on("entry", function(entry: any) {
                 if (/\/$/.test(entry.fileName)) {
                     // Directory file names end with '/'
                     fs.mkdir(path.join(runDir, entry.fileName), { recursive: true }, (err: any) => {
-                        if (err) throw err;
+                        if (err) return console.log(err);
                         zipfile.readEntry();
                     });
                 } else {
                     // Ensure parent directory exists
                     fs.mkdir(path.join(runDir, path.dirname(entry.fileName)), { recursive: true }, (err: any) => {
-                        if (err) throw err;
+                        if (err) return console.log(err);
                         zipfile.openReadStream(entry, function(err: any, readStream: any) {
-                            if (err) throw err;
+                            if (err) return console.log(err);
                             readStream.on("end", function() {
                                 zipfile.readEntry();
                             });
-                            
-                            readStream.pipe(fs.createWriteStream(path.join(runDir, entry.fileName)));
+                            try {
+                                readStream.pipe(fs.createWriteStream(path.join(runDir, entry.fileName)));
+                            } catch (err) {
+                                return console.error(err);
+                            }
                         });
                     });
                 }
@@ -654,8 +659,19 @@ router.get(`${config.baseUrl}/run/logs`, async (req, res) => {
                 });
 
                 // Delete the zip file and the extracted files
-                fs.unlinkSync(filePath);
-                fs.rmdirSync(runDir, { recursive: true });
+                try {
+                    if (fs.existsSync(filePath))
+                        fs.unlinkSync(filePath);
+                } catch (err) {
+                    console.error(err);
+                }
+
+                try {
+                    if (fs.existsSync(runDir))
+                        fs.rmdirSync(runDir, { recursive: true });
+                } catch (err) {
+                    console.error(err);
+                }
             });
         });
        });
